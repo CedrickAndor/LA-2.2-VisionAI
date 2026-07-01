@@ -1,3 +1,4 @@
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
@@ -10,7 +11,7 @@ import {
 
 import { analyzeImage } from "../lib/gemini";
 
-const PROMPTS = {
+const PROMPTS: Record<string, string> = {
   academic: `
 Act as a university professor. Analyze this image in an academic way.
 
@@ -54,7 +55,14 @@ Focus on listing visible physical assets, describing the location, identifying a
 `,
 };
 
-function cleanJsonText(text) {
+type Analysis = {
+  objects: string[];
+  context: string;
+  activities: string;
+  recommendations: string;
+};
+
+function cleanJsonText(text: string) {
   let cleaned = text.trim();
 
   cleaned = cleaned.replace(/```json/g, "");
@@ -71,21 +79,32 @@ function cleanJsonText(text) {
   return cleaned;
 }
 
-export default function ResultScreen({ route, navigation }) {
-  const { base64Image, promptKey } = route.params;
+export default function ResultScreen() {
+  const { base64Image, promptKey } = useLocalSearchParams();
 
-  const [analysis, setAnalysis] = useState(null);
-  const [error, setError] = useState(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const prompt = PROMPTS[promptKey] || PROMPTS.academic;
+  const imageBase64 = Array.isArray(base64Image) ? base64Image[0] : base64Image;
+  const selectedPromptKey = Array.isArray(promptKey)
+    ? promptKey[0]
+    : promptKey || "academic";
+
+  const prompt = PROMPTS[selectedPromptKey] || PROMPTS.academic;
 
   const runAnalysis = useCallback(async () => {
+    if (!imageBase64) {
+      setError("No image data found.");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const result = await analyzeImage(base64Image, prompt);
+      const result = await analyzeImage(imageBase64, prompt);
 
       const textPart = result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
@@ -103,12 +122,12 @@ export default function ResultScreen({ route, navigation }) {
         recommendations:
           parsed.recommendations || "No recommendations returned.",
       });
-    } catch (_err) {
+    } catch {
       setError("Could not analyze this image. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [base64Image, prompt]);
+  }, [imageBase64, prompt]);
 
   useEffect(() => {
     runAnalysis();
@@ -134,7 +153,7 @@ export default function ResultScreen({ route, navigation }) {
 
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => router.back()}
         >
           <Text style={styles.retryText}>Go Back</Text>
         </TouchableOpacity>
@@ -154,7 +173,7 @@ export default function ResultScreen({ route, navigation }) {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>AI Image Analysis</Text>
 
-      <Text style={styles.modeText}>Mode: {promptKey || "academic"}</Text>
+      <Text style={styles.modeText}>Mode: {selectedPromptKey}</Text>
 
       <Text style={styles.sectionTitle}>Objects</Text>
 
